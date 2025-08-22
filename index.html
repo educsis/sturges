@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Histograma con Regla de Sturges — Explicado paso a paso</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg: #0f172a; /* slate-900 */
+        --panel: #111827; /* gray-900 */
+        --muted: #94a3b8; /* slate-400 */
+        --text: #e5e7eb; /* gray-200 */
+        --accent: #22d3ee; /* cyan-400 */
+        --accent-2: #a78bfa; /* violet-400 */
+        --good: #10b981; /* emerald-500 */
+        --warn: #f59e0b; /* amber-500 */
+        --danger: #ef4444; /* red-500 */
+        --card: #0b1220; /* custom */
+        --border: #1f2937; /* gray-800 */
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Ubuntu;
+        background: radial-gradient(
+            1200px 600px at 20% 0%,
+            #14213d,
+            transparent
+          ),
+          radial-gradient(1200px 600px at 80% 0%, #1b1f38, transparent),
+          var(--bg);
+        color: var(--text);
+      }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 12px;
+        letter-spacing: 0.2px;
+      }
+      p.lead {
+        margin-top: 0;
+        color: var(--muted);
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 1.1fr 1.6fr;
+        gap: 24px;
+        align-items: start;
+      }
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.02),
+          rgba(255, 255, 255, 0)
+        );
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 18px 18px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+      .card h2 {
+        font-size: 18px;
+        margin: 0 0 10px;
+        color: #fff;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      textarea,
+      input[type="text"],
+      select {
+        width: 100%;
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 14px;
+        outline: none;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      button {
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #0b1020;
+        border: none;
+        padding: 12px 16px;
+        border-radius: 999px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .kpi {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .kpi .box {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+      }
+      .kpi .box .label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .kpi .box .value {
+        font-size: 18px;
+        font-weight: 800;
+        margin-top: 6px;
+      }
+      .steps {
+        counter-reset: step;
+        display: grid;
+        gap: 12px;
+      }
+      .step {
+        border-left: 3px solid var(--border);
+        padding-left: 12px;
+      }
+      .step::before {
+        counter-increment: step;
+        content: "Paso " counter(step);
+        display: inline-block;
+        font-weight: 800;
+        color: var(--accent);
+        margin-right: 8px;
+      }
+      code {
+        background: #0e1627;
+        border: 1px solid #15223c;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        color: #cbd5e1;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+      canvas {
+        background: #0b0f1a;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px;
+      }
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Histograma con <em>Regla de Sturges</em></h1>
+      <p class="lead">
+        Ingresa tus datos, y el sitio te mostrará
+        <strong>cada cálculo</strong> para construir el histograma paso a paso.
+      </p>
+    </header>
+
+    <div class="app">
+      <!-- Panel izquierdo: entrada y resumen -->
+      <section class="card">
+        <h2>1) Datos de entrada</h2>
+        <p class="small">
+          Separa números con coma, espacio o salto de línea. Acepta enteros y
+          decimales.
+        </p>
+        <textarea
+          id="dataInput"
+          placeholder="Ejemplo: 63, 67, 70, 72, 75, 76, 77, 78, 78, 79, 80, 81, 82, 83, 83, 84, 85, 86, 88, 88, 89, 90, 90, 91, 92, 93, 95, 96, 98, 100"
+        ></textarea>
+
+        <div class="row" style="margin-top: 12px; align-items: end">
+          <div>
+            <label class="small" for="roundStrategy"
+              >Redondeo del ancho de clase</label
+            >
+            <select id="roundStrategy">
+              <option value="ceil">Ceil (hacia arriba) — recomendado</option>
+              <option value="none">Sin redondeo (usar valor exacto)</option>
+            </select>
+          </div>
+          <div style="text-align: right">
+            <button id="btnExample" class="secondary">Cargar ejemplo</button>
+            <button id="btnCalc">Calcular</button>
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="box">
+            <div class="label">n</div>
+            <div class="value" id="kpiN">—</div>
+          </div>
+          <div class="box">
+            <div class="label">k (Sturges)</div>
+            <div class="value" id="kpiK">—</div>
+          </div>
+          <div class="box">
+            <div class="label">Rango</div>
+            <div class="value" id="kpiRange">—</div>
+          </div>
+          <div class="box">
+            <div class="label">Ancho de clase</div>
+            <div class="value" id="kpiWidth">—</div>
+          </div>
+        </div>
+        <p class="note">
+          La última clase incluye su extremo derecho: <code>[a, b]</code>. Las
+          demás son <code>[a, b)</code>.
+        </p>
+      </section>
+
+      <!-- Panel derecho: pasos + gráfico -->
+      <section class="card">
+        <h2>2) Cálculos paso a paso</h2>
+        <div class="steps" id="steps"></div>
+        <h2 style="margin-top: 18px">3) Histograma</h2>
+        <canvas id="histogram" height="260"></canvas>
+      </section>
+    </div>
+
+    <script>
+      // Utilidades
+      const fmt = (x, d = 3) =>
+        Number.isFinite(x)
+          ? Number(x)
+              .toFixed(d)
+              .replace(/\.0+$/, "")
+              .replace(/(\.\d*?)0+$/, "$1")
+          : "—";
+      const toArray = (text) => {
+        return text
+          .replace(/\n|;|\t/g, ",")
+          .split(",")
+          .map((s) => parseFloat(s.trim()))
+          .filter((v) => !Number.isNaN(v));
+      };
+
+      const exampleData = [
+        63, 67, 70, 72, 75, 76, 77, 78, 78, 79, 80, 81, 82, 83, 83, 84, 85, 86,
+        88, 88, 89, 90, 90, 91, 92, 93, 95, 96, 98, 100,
+      ];
+
+      const els = {
+        input: document.getElementById("dataInput"),
+        strategy: document.getElementById("roundStrategy"),
+        btnExample: document.getElementById("btnExample"),
+        btnCalc: document.getElementById("btnCalc"),
+        steps: document.getElementById("steps"),
+        kpiN: document.getElementById("kpiN"),
+        kpiK: document.getElementById("kpiK"),
+        kpiRange: document.getElementById("kpiRange"),
+        kpiWidth: document.getElementById("kpiWidth"),
+        canvas: document.getElementById("histogram"),
+      };
+
+      let chart = null;
+
+      function buildBins(min, width, k) {
+        const bins = [];
+        let start = min;
+        for (let i = 0; i < k; i++) {
+          const end = start + width;
+          bins.push({ start, end, freq: 0, values: [] });
+          start = end;
+        }
+        return bins;
+      }
+
+      function assignToBins(values, bins, max) {
+        for (const v of values) {
+          let placed = false;
+          for (let i = 0; i < bins.length; i++) {
+            const last = i === bins.length - 1;
+            const inBin = last
+              ? v >= bins[i].start && v <= bins[i].end
+              : v >= bins[i].start && v < bins[i].end;
+            if (inBin) {
+              bins[i].freq++;
+              bins[i].values.push(v);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed && v === max) {
+            // borde numérico
+            const last = bins[bins.length - 1];
+            last.freq++;
+            last.values.push(v);
+          }
+        }
+        return bins;
+      }
+
+      function makeLabels(bins) {
+        return bins.map((b, i) =>
+          i === bins.length - 1
+            ? `[${fmt(b.start)}, ${fmt(b.end)}]`
+            : `[${fmt(b.start)}, ${fmt(b.end)})`
+        );
+      }
+
+      function renderSteps({
+        n,
+        k,
+        log2n,
+        min,
+        max,
+        range,
+        widthExact,
+        widthChosen,
+        strategy,
+        bins,
+      }) {
+        const s = [];
+        s.push(`
+        <div class="step">
+          <div><strong>Tamaño de la muestra</strong>: <code>n = ${n}</code></div>
+          <div class="muted">Ordenamos los datos para identificar mínimo y máximo.</div>
+        </div>
+      `);
+        s.push(`
+        <div class="step">
+          <div><strong>Regla de Sturges</strong>: <code>k = ceil(1 + log₂(n))</code></div>
+          <div>log₂(n) = <code>${fmt(
+            log2n,
+            4
+          )}</code>; 1 + log₂(n) = <code>${fmt(
+          1 + log2n,
+          4
+        )}</code>; por tanto <code>k = ${k}</code>.</div>
+        </div>
+      `);
+        s.push(`
+        <div class="step">
+          <div><strong>Mínimo y máximo</strong>: min = <code>${fmt(
+            min
+          )}</code>, max = <code>${fmt(max)}</code></div>
+          <div><strong>Rango</strong>: <code>range = max - min = ${fmt(
+            max
+          )} - ${fmt(min)} = ${fmt(range)}</code></div>
+        </div>
+      `);
+        s.push(`
+        <div class="step">
+          <div><strong>Ancho de clase teórico</strong>: <code>h* = range / k = ${fmt(
+            range
+          )} / ${k} = ${fmt(widthExact, 6)}</code></div>
+          <div>Elegimos <strong>${
+            strategy === "ceil"
+              ? "redondear hacia arriba (ceil)"
+              : "usar valor exacto"
+          }</strong>, por lo que el ancho usado es <code>h = ${fmt(
+          widthChosen,
+          6
+        )}</code>.</div>
+          <div class="note">Usar ceil evita quedarnos cortos; puedes cambiarlo en el selector.</div>
+        </div>
+      `);
+
+        const rows = bins
+          .map(
+            (b, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${
+              i === bins.length - 1
+                ? `[${fmt(b.start)}, ${fmt(b.end)}]`
+                : `[${fmt(b.start)}, ${fmt(b.end)})`
+            }</td>
+            <td>${b.freq}</td>
+            <td class="muted">${
+              b.values.length ? b.values.join(", ") : "—"
+            }</td>
+          </tr>
+      `
+          )
+          .join("");
+
+        s.push(`
+        <div class="step">
+          <div><strong>Intervalos (clases) y frecuencias</strong></div>
+          <table>
+            <thead><tr><th>#</th><th>Intervalo</th><th>Frecuencia</th><th>Valores en la clase</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="note">Todas las clases son de ancho <code>${fmt(
+            widthChosen
+          )}</code>. La última clase incluye el extremo derecho.</div>
+        </div>
+      `);
+
+        els.steps.innerHTML = s.join("\n");
+      }
+
+      function renderChart(labels, frequencies) {
+        const ctx = els.canvas.getContext("2d");
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{ label: "Frecuencia", data: frequencies }],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: { label: (c) => `Frecuencia: ${c.parsed.y}` },
+              },
+            },
+            scales: {
+              x: { title: { display: true, text: "Intervalos" } },
+              y: {
+                title: { display: true, text: "Frecuencia" },
+                ticks: { precision: 0 },
+                beginAtZero: true,
+              },
+            },
+          },
+        });
+      }
+
+      function compute() {
+        const values = toArray(els.input.value);
+        if (values.length === 0) {
+          alert("Ingresa al menos un número.");
+          return;
+        }
+        values.sort((a, b) => a - b);
+
+        const n = values.length;
+        const log2n = Math.log2(n);
+        let k = Math.ceil(1 + log2n);
+        if (!Number.isFinite(k) || k < 1) k = 1;
+
+        const min = values[0];
+        const max = values[values.length - 1];
+        const range = max - min;
+
+        // Manejo rango cero (todos iguales)
+        if (range === 0) {
+          const width = 1;
+          const bins = buildBins(min, width, 1);
+          assignToBins(values, bins, max);
+          const labels = makeLabels(bins);
+          const freqs = bins.map((b) => b.freq);
+
+          els.kpiN.textContent = n;
+          els.kpiK.textContent = 1;
+          els.kpiRange.textContent = fmt(range);
+          els.kpiWidth.textContent = fmt(width);
+
+          renderSteps({
+            n,
+            k: 1,
+            log2n,
+            min,
+            max,
+            range,
+            widthExact: 0,
+            widthChosen: width,
+            strategy: "ceil",
+            bins,
+          });
+          renderChart(labels, freqs);
+          return;
+        }
+
+        const widthExact = range / k;
+        const strategy = els.strategy.value;
+        const widthChosen =
+          strategy === "ceil" ? Math.ceil(widthExact) : widthExact;
+
+        const bins = buildBins(min, widthChosen, k);
+        assignToBins(values, bins, max);
+
+        const labels = makeLabels(bins);
+        const freqs = bins.map((b) => b.freq);
+
+        els.kpiN.textContent = n;
+        els.kpiK.textContent = k;
+        els.kpiRange.textContent = fmt(range);
+        els.kpiWidth.textContent = fmt(widthChosen);
+
+        renderSteps({
+          n,
+          k,
+          log2n,
+          min,
+          max,
+          range,
+          widthExact,
+          widthChosen,
+          strategy,
+          bins,
+        });
+        renderChart(labels, freqs);
+      }
+
+      // Eventos
+      els.btnCalc.addEventListener("click", compute);
+      els.btnExample.addEventListener("click", () => {
+        els.input.value = exampleData.join(", ");
+      });
+
+      // Autocargar ejemplo para que se vea algo al abrir
+      els.input.value = exampleData.join(", ");
+      compute();
+    </script>
+  </body>
+</html>
